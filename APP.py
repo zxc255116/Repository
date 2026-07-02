@@ -7,7 +7,7 @@ import time
 st.set_page_config(page_title="台股全市場強勢選股器", layout="wide")
 
 st.title("📈 智慧全台股：均線多頭 + 大股東吸籌選股")
-st.caption("【全市場上市上櫃最終完美版】內建 1,841 檔上市櫃完整清單，修正進度條顯示，100% 穩定通關。")
+st.caption("【全市場上市上櫃最終鎖定版】內建 1,841 檔上市櫃完整清單，解決 Streamlit 快取卡死問題。")
 
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoienhjMjU1MTE2IiwiZW1haWwiOiJsb3ZlbWU4MDQyNEBnbWFpbC5jb20iLCJ0b2tlbl92ZXJzaW9uIjowfQ.4Eb5SRie0vj5L1Q6OrbSVe2_WcNKsrrekwKQsAPj420"
 
@@ -29,7 +29,7 @@ holder_type = st.sidebar.selectbox("大股東持股定義", ["1,000張以上", "
 holding_stage_map = {"1,000張以上": "1,000,000以上", "400張以上": "400,000-600,000"}
 selected_stage = holding_stage_map[holder_type]
 
-# 實打實全台股 1,841 檔上市上櫃核心代號串
+# 1,841 檔上市上櫃核心代號串
 RAW_STOCKS_STRING = """
 1101 1102 1103 1104 1108 1109 1110 1201 1203 1210 1213 1215 1216 1217 1218 1219 1220 1225 1227 1229
 1231 1232 1233 1234 1235 1236 1256 1258 1259 1264 1268 1301 1303 1304 1305 1307 1308 1309 1310 1312
@@ -90,28 +90,31 @@ RAW_STOCKS_STRING = """
 """
 
 ALL_STOCKS_LIST = [sid.strip() for sid in RAW_STOCKS_STRING.split() if sid.strip()]
+total_stocks = len(ALL_STOCKS_LIST)
 
-# --- 主要選股流程 ---
+# --- 使用 Session State 鎖定執行狀態 ---
+if "running" not in st.session_state:
+    st.session_state.running = False
+
+# 按鈕觸發時，把狀態改為 True
 if st.button("🚀 開始全市場 1,841 檔上市上櫃強勢掃描", type="primary"):
+    st.session_state.running = True
+
+# 只要狀態為 True，程式就絕對不回頭、老老實實跑完！
+if st.session_state.running:
     today = datetime.date.today()
     start_date = (today - datetime.timedelta(days=120)).strftime('%Y-%m-%d')
     
-    st.success(f"🔥 成功加載全台股共 {len(ALL_STOCKS_LIST)} 檔上市上櫃股票清單！開始進行全自動技術與籌碼篩選...")
+    st.success(f"🔥 記憶體狀態鎖定成功！正在掃描全台股共 {total_stocks} 檔上市上櫃股票...")
         
     final_results = []
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    total_stocks = len(ALL_STOCKS_LIST)
-    
     for idx, stock_id in enumerate(ALL_STOCKS_LIST):
+        # 更新進度條
         progress_bar.progress((idx + 1) / total_stocks)
-        
-        # 徹底移除所有髒空白，分母強制對齊變數 total_stocks
-        if idx % 5 == 0:
-            status_text.text(f"掃描進度: {idx + 1} / {total_stocks} 檔 | 當前個股代號: {stock_id}")
-            
-        time.sleep(0.01)
+        status_text.text(f"📊 掃描進度: {idx + 1} / {total_stocks} 檔 | 當前個股: {stock_id}")
         
         # 1. 抓歷史股價
         df_price = fetch_data("TaiwanStockPrice", {"stock_id": stock_id, "start_date": start_date})
@@ -126,14 +129,13 @@ if st.button("🚀 開始全市場 1,841 檔上市上櫃強勢掃描", type="pri
         
         p_latest = df_price.iloc[-1]
         
-        # 條件 1 & 2：均線多頭排列且股價大於 20MA
         cond_ma = p_latest['MA5'] > p_latest['MA10'] > p_latest['MA20'] > p_latest['MA60']
         cond_price = p_latest['close'] > p_latest['MA20']
         
         if not (cond_ma and cond_price):
             continue
             
-        # 條件 3：技術面初篩過關，才查大股東
+        # 2. 技術面過關，查大股東
         df_share = fetch_data("TaiwanStockShareholding", {"stock_id": stock_id, "start_date": start_date})
         if df_share.empty:
             continue
@@ -155,7 +157,9 @@ if st.button("🚀 開始全市場 1,841 檔上市上櫃強勢掃描", type="pri
                 "近月大戶增減": f"{round(latest_share - month_ago_share, 2)}%"
             })
 
+    # 跑完後清除進度文字，並重置狀態
     status_text.empty()
+    st.session_state.running = False
 
     if final_results:
         st.success(f"🔥 篩選完成！全市場共有 {len(final_results)} 檔完全符合條件：")
