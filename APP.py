@@ -7,7 +7,7 @@ import time
 st.set_page_config(page_title="台股全市場強勢選股器", layout="wide")
 
 st.title("📈 智慧全台股：均線多頭 + 大股東吸籌選股")
-st.caption("【全市場上市上櫃純淨版】拔除所有文字顯示，徹底解決分母卡死問題。")
+st.caption("【全市場穩定版】加入 API 流量防護與延遲機制，徹底解決因被封鎖導致卡死在 1101 的問題。")
 
 FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoienhjMjU1MTE2IiwiZW1haWwiOiJsb3ZlbWU4MDQyNEBnbWFpbC5jb20iLCJ0b2tlbl92ZXJzaW9uIjowfQ.4Eb5SRie0vj5L1Q6OrbSVe2_WcNKsrrekwKQsAPj420"
 
@@ -18,8 +18,13 @@ def fetch_data(dataset, kwargs={}):
     try:
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
-            return pd.DataFrame(r.json()['data'])
-    except:
+            data = r.json().get('data', [])
+            return pd.DataFrame(data)
+        elif r.status_code == 429:
+            # 偵測到流量限制，通知使用者
+            st.warning("⚠️ 觸發 FinMind API 流量限制 (429)，程式自動暫停 5 秒...")
+            time.sleep(5)
+    except Exception as e:
         pass
     return pd.DataFrame()
 
@@ -29,7 +34,7 @@ holder_type = st.sidebar.selectbox("大股東持股定義", ["1,000張以上", "
 holding_stage_map = {"1,000張以上": "1,000,000以上", "400張以上": "400,000-600,000"}
 selected_stage = holding_stage_map[holder_type]
 
-# 1,841 檔上市上櫃完整清單
+# 1,841 檔上市上櫃核心代號串
 RAW_STOCKS_STRING = """
 1101 1102 1103 1104 1108 1109 1110 1201 1203 1210 1213 1215 1216 1217 1218 1219 1220 1225 1227 1229
 1231 1232 1233 1234 1235 1236 1256 1258 1259 1264 1268 1301 1303 1304 1305 1307 1308 1309 1310 1312
@@ -64,23 +69,103 @@ RAW_STOCKS_STRING = """
 3056 3057 3058 3059 3060 3062 3090 3092 3093 3130 3131 3138 3149 3164 3167 3189 3209 3229 3231 3257
 3296 3305 3308 3311 3312 3321 3324 3338 3346 3356 3376 3380 3383 3406 3413 3416 3419 3432 3437 3443
 3450 3454 3481 3494 3501 3504 3515 3518 3528 3532 3533 3535 3536 3545 3550 3557 3576 3583 3588 3591
-3593 3596 3605 3607 3609 3617 3622 3645 3653 3661 3665 3669 3673 3679 3682 3694 3701 3702 3703
+3593 3596 3605 3607 3609 3617 3622 3645 3653 3661 3665 3669 3673 3679 3682 3686 3694 3701 3702 3703
 3704 3705 3706 3708 3711 3712 3714 3715 4104 4106 4108 4119 4128 4137 4142 4148 4155 4164 4306 4414
 4426 4438 4439 4526 4532 4536 4540 4545 4551 4552 4555 4557 4560 4562 4566 4571 4572 4576 4581 4583
-4720 4722 4725 4737 4739 4746 4755 4763 4764 4766 4770 4904 4906 4912 4915 4916 4919 4927 4934 4935
+4720 4722 4725 4737 4739 4746 4755 4763 4764 4766 4770 4904 4906 4912 4915 4915 4916 4919 4927 4934 4935
 4938 4942 4943 4952 4956 4958 4960 4961 4967 4968 4976 4977 4989 4994 4999 5007 5203 5215 5222 5234
 5243 5258 5264 5269 5283 5284 5285 5288 5291 5305 5347 5351 5371 5388 5425 5434 5469 5471 5483 5493
 5515 5519 5521 5522 5525 5531 5533 5534 5536 5538 5546 5607 5608 5871 5876 5880 5906 5907 6005 6016
 6024 6112 6115 6116 6117 6120 6121 6125 6129 6133 6136 6138 6139 6141 6142 6143 6147 6152 6153 6155
 6160 6161 6164 6165 6166 6168 6172 6173 6176 6180 6182 6184 6187 6189 6191 6192 6196 6201 6202 6205
 6206 6207 6209 6213 6214 6217 6219 6223 6224 6230 6231 6233 6235 6237 6239 6244 6245 6251 6257 6261
-6269 6271 6274 6277 6278 6279 6281 6282 6283 6284 6285 6290 6405 6409 6411 6412 6414 6415 6416 6431
+6269 6271 6274 6277 6277 6278 6279 6281 6282 6283 6284 6285 6290 6405 6409 6411 6412 6414 6415 6416 6431
 6438 6442 6443 6451 6456 6462 6464 6469 6472 6477 6488 6491 6504 6505 6509 6515 6531 6533 6541 6547
 6548 6550 6558 6579 6581 6582 6591 6592 6598 6605 6612 6625 6641 6643 6655 6666 6668 6669 6670 6671
 6672 6674 6679 6683 6689 6691 6695 6698 6706 715 6719 6732 6743 6753 6754 6756 6768 6770 6776 6782
 6789 6790 6799 6806 6807 6811 6829 6834 6861 8011 8016 8021 8027 8028 8033 8039 8040 8042 8043 8044
 8046 8048 8050 8054 8064 8069 8070 8072 8074 8076 8081 8085 8086 8088 8091 8096 8101 8103 8104 8105
 8107 8109 8110 8112 8114 8121 8131 8147 8150 8155 8163 8176 8182 8183 8201 8210 8213 8215 8234 8249
-255 8261 8271 8277 8287 8289 8299 8341 8349 8354 8358 8374 8383 8404 8406 8411 8415 8422 8427 8429
+8255 8261 8271 8277 8287 8289 8299 8341 8349 8354 8358 8374 8383 8404 8406 8411 8415 8422 8427 8429
 8431 8432 8433 8436 8438 8440 8442 8444 8450 8454 8462 8463 8464 8467 8473 8477 8478 8480 8481 8482
-8488
+8488 8499 8916 8924 8926 8927 8928 8929 8930 8931 8932 8933 8935 8936 8937 8938 8940 8996 9802 9902
+9904 9905 9906 9907 9910 9911 9912 9914 9917 9918 9919 9921 9924 9925 9926 9927 9928 9929 9930 9931
+9933 9934 9935 9937 9938 9939 9940 9941 9941A 9942 9943 9944 9945 9946 9949 9950 9951 9955 9958 9960
+9962
+"""
+
+ALL_STOCKS_LIST = [sid.strip() for sid in RAW_STOCKS_STRING.split() if sid.strip()]
+total_stocks = len(ALL_STOCKS_LIST)
+
+if "running" not in st.session_state:
+    st.session_state.running = False
+
+if st.button("🚀 開始全市場 1,841 檔上市上櫃強勢掃描", type="primary"):
+    st.session_state.running = True
+
+if st.session_state.running:
+    today = datetime.date.today()
+    start_date = (today - datetime.timedelta(days=120)).strftime('%Y-%m-%d')
+    
+    st.info(f"⏳ 已鎖定背景程序，正在逐檔分析全台股共 {total_stocks} 檔...")
+    
+    final_results = []
+    progress_bar = st.progress(0.0)
+    
+    for idx, stock_id in enumerate(ALL_STOCKS_LIST):
+        # 嚴格數學計算進度，不夾帶任何字串
+        progress_bar.progress((idx + 1) / total_stocks)
+        
+        # 核心防護：每抓 5 檔強制微休息 0.2 秒，防止被 FinMind 判定為惡意轟炸
+        if idx % 5 == 0:
+            time.sleep(0.2)
+            
+        # 1. 抓歷史股價
+        df_price = fetch_data("TaiwanStockPrice", {"stock_id": stock_id, "start_date": start_date})
+        if df_price.empty or len(df_price) < 60:
+            continue
+            
+        df_price = df_price.sort_values('date').reset_index(drop=True)
+        df_price['MA5'] = df_price['close'].rolling(5).mean()
+        df_price['MA10'] = df_price['close'].rolling(10).mean()
+        df_price['MA20'] = df_price['close'].rolling(20).mean()
+        df_price['MA60'] = df_price['close'].rolling(60).mean()
+        
+        p_latest = df_price.iloc[-1]
+        
+        cond_ma = p_latest['MA5'] > p_latest['MA10'] > p_latest['MA20'] > p_latest['MA60']
+        cond_price = p_latest['close'] > p_latest['MA20']
+        
+        if not (cond_ma and cond_price):
+            continue
+            
+        # 2. 技術面過關，查大股東
+        df_share = fetch_data("TaiwanStockShareholding", {"stock_id": stock_id, "start_date": start_date})
+        if df_share.empty:
+            continue
+            
+        df_target_holder = df_share[df_share['holding_stage'] == selected_stage].sort_values('date').reset_index(drop=True)
+        if len(df_target_holder) < 4:
+            continue
+            
+        latest_share = df_target_holder.iloc[-1]['proportions']
+        month_ago_share = df_target_holder.iloc[-4]['proportions']
+        
+        if latest_share > month_ago_share:
+            final_results.append({
+                "股票代號": stock_id,
+                "今日收盤": p_latest['close'],
+                "5MA": round(p_latest['MA5'], 2),
+                "20MA": round(p_latest['MA20'], 2),
+                f"最新{holder_type}%": f"{latest_share}%",
+                "近月大戶增減": f"{round(latest_share - month_ago_share, 2)}%"
+            })
+
+    st.session_state.running = False
+
+    if final_results:
+        st.success(f"🔥 篩選完成！全市場共有 {len(final_results)} 檔符合條件：")
+        df_res = pd.DataFrame(final_results)
+        st.dataframe(df_res, use_container_width=True)
+    else:
+        st.warning("今日全台股市中，暫時沒有完全符合所有條件的股票。")
