@@ -34,22 +34,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =====================================================================
-# 2. 安全讀取金鑰並連線 Supabase
+# 2. 直連版 Supabase 設定（免讀取 Secrets）
 # =====================================================================
-try:
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-except Exception:
-    # 本地備用方案
-    SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://你的專案代號.supabase.co")
-    SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "你的anon密鑰")
+SUPABASE_URL = "https://ykkncbfqrdslavsugreg.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlra25jYmZxcmRzbGF2c3VncmVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzNDQ0NDUsImV4cCI6MjA5NzkyMDQ0NX0.x2p_mJlXZVEnZF7VkcJXGDb8opUPdoBMTydZiYf_ErQ"
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # =====================================================================
 # 3. 網頁前端畫面呈現
 # =====================================================================
-st.title("🐾 毛孩處方與保健品：省錢比街雷達")
+st.title("🐾 毛孩處方與保健品：省錢比價雷達")
 st.write("為您的生病毛孩減輕荷包負擔，全台各大電商即時最低價一覽！")
 
 # 搜尋框
@@ -100,4 +95,4 @@ try:
                 st.markdown("<br>", unsafe_allow_html=True)
 
 except Exception as e:
-    st.error(f"❌ 無法連線至雲端資料庫，請檢查 Streamlit Secrets 設定！錯誤原因: {e}")
+    st.error(f"❌ 無法連線至雲端資料庫，請檢查設定！錯誤原因: {e}")
