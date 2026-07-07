@@ -1,78 +1,103 @@
 import os
-import time
-import random
-import requests
-from bs4 import BeautifulSoup
-from supabase import create_client, Client
 import streamlit as st
+from supabase import create_client, Client
 
 # =====================================================================
-# 1. 自動讀取 Streamlit Secrets 安全金鑰
+# 1. 頁面基本設定（手機端優化）
+# =====================================================================
+st.set_page_config(
+    page_title="毛孩省錢比價雷達",
+    page_icon="🐾",
+    layout="centered",
+    initial_sidebar_state="collapsed"
+)
+
+# 自訂網頁風格 CSS
+st.markdown("""
+    <style>
+    .main { background-color: #fcf9f2; }
+    .stButton>button {
+        background-color: #ff9f43;
+        color: white;
+        border-radius: 10px;
+        border: none;
+        width: 100%;
+    }
+    .price-card {
+        background-color: white;
+        padding: 15px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        margin-bottom: 15px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# =====================================================================
+# 2. 安全讀取金鑰並連線 Supabase
 # =====================================================================
 try:
-    # 優先讀取 Streamlit 雲端保險箱的設定
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 except Exception:
-    # 如果在本地電腦執行，則讀取本地環境變數
+    # 本地備用方案
     SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://你的專案代號.supabase.co")
     SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "你的anon密鑰")
 
-# 建立 100% 安全的雲端資料庫連線
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# 防爬蟲設定：動態切換瀏覽器身份
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36"
-]
+# =====================================================================
+# 3. 網頁前端畫面呈現
+# =====================================================================
+st.title("🐾 毛孩處方與保健品：省錢比街雷達")
+st.write("為您的生病毛孩減輕荷包負擔，全台各大電商即時最低價一覽！")
 
-def fetch_latest_price(product_name):
-    """模擬全網搜尋比價邏輯"""
-    print(f"🔍 正在搜尋市場即時價格：{product_name}...")
-    
-    # 這裡未來可由 Python 爬蟲自動抓取 MOMO/蝦皮 實際數字
-    # 目前先以 1350 元為基準，隨機產生 +/- 50 元的當日波動特價測試
-    simulated_price = random.randint(1280, 1420)
-    
-    # 隨機休息 2-4 秒，防止速度太快被電商伺服器封鎖
-    time.sleep(random.uniform(2, 4))
-    return simulated_price
+# 搜尋框
+search_query = st.text_input("🔍 輸入想比價的處方飼料或保健品名稱：", placeholder="例如：皇家 腎臟、魚油...")
 
-def main():
-    print("🚀 --- 寵物比價雷達：自動化排程開始 ---")
-    
-    try:
-        # Step 1: 從 Supabase 撈出所有需要比價的商品
-        response = supabase.table("pet_products").select("id, name").execute()
-        products = response.data
+st.markdown("---")
+
+try:
+    # 從 Supabase 資料庫抓取最新的商品資料
+    if search_query:
+        # 如果用戶有輸入，就進行模糊搜尋
+        response = supabase.table("pet_products").select("*").ilike("name", f"%{search_query}%").execute()
+    else:
+        # 預設顯示全部商品
+        response = supabase.table("pet_products").select("*").execute()
         
-        if not products:
-            print("📭 資料庫裡空空的，請先去 Supabase 塞入商品資料喔！")
-            return
-            
-        print(f"📋 成功讀取到 {len(products)} 筆商品，開始更新價格...")
+    products = response.data
+
+    if not products:
+        st.warning("📭 目前搜尋不到相關商品，或是資料庫裡還是空的喔！")
+    else:
+        st.subheader("🔥 今日震撼最低價清單")
         
-        # Step 2: 逐一進行比價並寫回資料庫
+        # 逐一將資料庫的商品渲染成網頁卡片
         for prod in products:
-            prod_id = prod["id"]
-            prod_name = prod["name"]
-            
-            # 獲取今日最新低價
-            new_price = fetch_latest_price(prod_name)
-            
-            # 自動將最新價格 UPDATE 回 Supabase 雲端
-            supabase.table("pet_products") \
-                .update({"lowest_price": new_price}) \
-                .eq("id", prod_id) \
-                .execute()
+            with st.container():
+                st.markdown(f"""
+                <div class="price-card">
+                    <span style="background-color:#ffeaa7; padding:3px 8px; border-radius:5px; font-size:12px; color:#d63031; font-weight:bold;">
+                        {prod['category']}
+                    </span>
+                    <h3 style="margin-top:5px; color:#2d3436;">{prod['name']}</h3>
+                    <p style="font-size:20px; color:#27ae60; font-weight:bold; margin-bottom:10px;">
+                        今日網購最低價：${int(prod['lowest_price'])} 元起
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
                 
-            print(f"✅ 更新成功！ID [{prod_id}] {prod_name} ➔ 最新低價: ${new_price}")
-            
-    except Exception as e:
-        print(f"❌ 執行發生錯誤: {e}")
-        
-    print("🏁 --- 全數商品價格更新完畢，排程結束 ---")
+                # 建立兩大主要電商的跳轉按鈕
+                col1, col2 = st.columns(2)
+                with col1:
+                    if prod.get('shopee_url'):
+                        st.link_button("🛒 前往蝦皮商城購買", prod['shopee_url'])
+                with col2:
+                    if prod.get('momo_url'):
+                        st.link_button("📦 前往 MOMO 購物網", prod['momo_url'])
+                
+                st.markdown("<br>", unsafe_allow_html=True)
 
-if __name__ == "__main__":
-    main()
+except Exception as e:
+    st.error(f"❌ 無法連線至雲端資料庫，請檢查 Streamlit Secrets 設定！錯誤原因: {e}")
