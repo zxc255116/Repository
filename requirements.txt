@@ -2,3 +2,7 @@ pandas
 openpyxl
 streamlit
 st-gsheets-connection
+supabase
+requests
+beautifulsoup4
+streamlit
